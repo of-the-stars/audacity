@@ -29,6 +29,8 @@ set(MODULE_SRC
 
     ${CMAKE_CURRENT_LIST_DIR}/internal/au3audiometer.cpp
     ${CMAKE_CURRENT_LIST_DIR}/internal/au3audiometer.h
+    ${CMAKE_CURRENT_LIST_DIR}/internal/au3audiometerfactory.cpp
+    ${CMAKE_CURRENT_LIST_DIR}/internal/au3audiometerfactory.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/wxtypes_convert.h
     ${CMAKE_CURRENT_LIST_DIR}/internal/wxlogwrap.cpp
     ${CMAKE_CURRENT_LIST_DIR}/internal/wxlogwrap.h
@@ -803,6 +805,13 @@ set(MODULE_SRC ${MODULE_SRC}
     ${AU3_MODULES}/import-export/mod-ffmpeg/lib-ffmpeg-support/impl/avformat/61/AVFormatImpl.cpp
     ${AU3_MODULES}/import-export/mod-ffmpeg/lib-ffmpeg-support/impl/avutil/59/AVUtilImpl.cpp
 
+    ${AU3_MODULES}/import-export/mod-ffmpeg/lib-ffmpeg-support/impl/ffmpeg-8.0.0-single-header.h
+    ${AU3_MODULES}/import-export/mod-ffmpeg/lib-ffmpeg-support/impl/avutil/60/avconfig.h
+    ${AU3_MODULES}/import-export/mod-ffmpeg/lib-ffmpeg-support/impl/avcodec/62/AVCodecIDLookup.cpp
+    ${AU3_MODULES}/import-export/mod-ffmpeg/lib-ffmpeg-support/impl/avcodec/62/AVCodecImpl.cpp
+    ${AU3_MODULES}/import-export/mod-ffmpeg/lib-ffmpeg-support/impl/avformat/62/AVFormatImpl.cpp
+    ${AU3_MODULES}/import-export/mod-ffmpeg/lib-ffmpeg-support/impl/avutil/60/AVUtilImpl.cpp
+
     ${AU3_MODULES}/import-export/mod-ffmpeg/lib-ffmpeg-support/impl/avcodec/AVCodecFunctionsLoader.cpp
     ${AU3_MODULES}/import-export/mod-ffmpeg/lib-ffmpeg-support/impl/avcodec/AVCodecFunctionsLoader.h
     ${AU3_MODULES}/import-export/mod-ffmpeg/lib-ffmpeg-support/impl/avformat/AVFormatFunctionsLoader.cpp
@@ -821,7 +830,7 @@ add_subdirectory(${CMAKE_CURRENT_LIST_DIR}/thirdparty/portmixer au3-portmixer)
 set(MODULE_INCLUDE ${AU3_INCLUDE})
 set(MODULE_DEF ${AU3_DEF})
 set(MODULE_SRC ${MODULE_SRC} ${AU3_SRC})
-set(MODULE_LINK ${AU3_LINK} project)
+set(MODULE_LINK ${AU3_LINK} project auaudio)
 
 set(MODULE_USE_PCH OFF)
 set(MODULE_USE_UNITY OFF)

@@ -15,6 +15,7 @@ static const ActionCode CLIPPING_IN_WAVEFORM_CODE("toggle-clipping-in-waveform")
 static const ActionCode MINUTES_SECONDS_RULER("minutes-seconds-ruler");
 static const ActionCode BEATS_MEASURES_RULER("beats-measures-ruler");
 static const ActionCode CLIP_PITCH_AND_SPEED_CODE("clip-pitch-speed");
+static const ActionCode TOGGLE_PLAYBACK_ON_RULER_CLICK_ENABLED_CODE("toggle-playback-on-ruler-click-enabled");
 
 void ProjectSceneActionsController::init()
 {
@@ -26,6 +27,8 @@ void ProjectSceneActionsController::init()
     dispatcher()->reg(this, "update-display-while-playing", this, &ProjectSceneActionsController::updateDisplayWhilePlaying);
     dispatcher()->reg(this, "pinned-play-head", this, &ProjectSceneActionsController::pinnedPlayHead);
     dispatcher()->reg(this, CLIP_PITCH_AND_SPEED_CODE, this, &ProjectSceneActionsController::openClipPitchAndSpeedEdit);
+    dispatcher()->reg(this, TOGGLE_PLAYBACK_ON_RULER_CLICK_ENABLED_CODE, this,
+                      &ProjectSceneActionsController::togglePlaybackOnRulerClickEnabled);
 }
 
 void ProjectSceneActionsController::notifyActionCheckedChanged(const ActionCode& actionCode)
@@ -99,10 +102,17 @@ void ProjectSceneActionsController::openClipPitchAndSpeedEdit(const ActionData& 
 
     muse::UriQuery query("audacity://projectscene/editpitchandspeed");
     query.addParam("trackId", muse::Val(std::to_string(clipKey.trackId)));
-    query.addParam("clipId", muse::Val(std::to_string(clipKey.clipId)));
+    query.addParam("clipId", muse::Val(std::to_string(clipKey.itemId)));
     query.addParam("focusItemName", muse::Val("pitch"));
 
     interactive()->open(query);
+}
+
+void ProjectSceneActionsController::togglePlaybackOnRulerClickEnabled()
+{
+    bool isEnabled = configuration()->playbackOnRulerClickEnabled();
+    configuration()->setPlaybackOnRulerClickEnabled(!isEnabled);
+    notifyActionCheckedChanged(TOGGLE_PLAYBACK_ON_RULER_CLICK_ENABLED_CODE);
 }
 
 bool ProjectSceneActionsController::actionChecked(const ActionCode& actionCode) const
@@ -112,7 +122,8 @@ bool ProjectSceneActionsController::actionChecked(const ActionCode& actionCode) 
         { RMS_IN_WAVEFORM_CODE, configuration()->isRMSInWaveformVisible() },
         { CLIPPING_IN_WAVEFORM_CODE, configuration()->isClippingInWaveformVisible() },
         { MINUTES_SECONDS_RULER, configuration()->timelineRulerMode() == TimelineRulerMode::MINUTES_AND_SECONDS },
-        { BEATS_MEASURES_RULER, configuration()->timelineRulerMode() == TimelineRulerMode::BEATS_AND_MEASURES }
+        { BEATS_MEASURES_RULER, configuration()->timelineRulerMode() == TimelineRulerMode::BEATS_AND_MEASURES },
+        { TOGGLE_PLAYBACK_ON_RULER_CLICK_ENABLED_CODE, configuration()->playbackOnRulerClickEnabled() }
     };
 
     return isChecked[actionCode];

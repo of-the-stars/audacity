@@ -162,13 +162,13 @@ void AppMenuModel::setItemIsChecked(const QString& itemId, bool checked)
 
 void AppMenuModel::updateUndoRedoItems()
 {
-    MenuItem& undoItem = findItem(ActionCode("undo"));
+    MenuItem& undoItem = findItem(ActionCode("action://undo"));
     const TranslatableString undoActionName = projectHistory()->topMostUndoActionName();
     undoItem.setTitle(undoActionName.isEmpty()
                       ? TranslatableString("action", "Undo")
                       : TranslatableString("action", "Undo ‘%1’").arg(undoActionName));
 
-    MenuItem& redoItem = findItem(ActionCode("redo"));
+    MenuItem& redoItem = findItem(ActionCode("action://redo"));
     const TranslatableString redoActionName = projectHistory()->topMostRedoActionName();
     redoItem.setTitle(redoActionName.isEmpty()
                       ? TranslatableString("action", "Redo")
@@ -223,19 +223,23 @@ MenuItem* AppMenuModel::makeFileMenu()
 MenuItem* AppMenuModel::makeEditMenu()
 {
     MenuItemList editItems {
-        makeMenuItem("undo"),
-        makeMenuItem("redo"),
+        makeMenuItem("action://undo"),
+        makeMenuItem("action://redo"),
         makeSeparator(),
-        makeMenuItem("cut"),
-        makeMenuItem("copy"),
-        makeMenuItem("paste"),
-        makeMenuItem("delete"),
+        makeMenuItem("action://cut"),
+        makeMenuItem("action://copy"),
+        makeMenuItem("action://paste"),
+        makeMenuItem("action://delete"),
         makeSeparator(),
         makeMenuItem("group-clips"),
         makeMenuItem("ungroup-clips"),
         makeSeparator(),
         makeMenuItem("duplicate"),
-        makeMenuItem("paste-insert"),
+        // TODO: we should only show those trackedit actions when in the trackedit context,
+        // this need some framework update to support contextual shortcuts and dynamic actions based on context
+        // makeMenuItem("action://trackedit/paste-overlap"),
+        // makeMenuItem("action://trackedit/paste-insert"),
+        // makeMenuItem("action://trackedit/paste-insert-all-tracks-ripple"),
         makeMenuItem("delete-per-track-ripple"),
         makeSeparator(),
         makeMenu(TranslatableString("appshell/menu/clip", "Clip"), makeClipItems(), "menu-clip"),

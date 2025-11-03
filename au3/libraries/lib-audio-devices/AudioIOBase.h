@@ -63,6 +63,7 @@ struct AudioIOStartStreamOptions
     double preRoll{ 0.0 };
 
     bool playNonWaveTracks{ true };
+    bool inputMonitoring{ false };
 
     // contents may get swapped with empty vector
     PRCrossfadeData* pCrossfadeData{};
@@ -111,6 +112,21 @@ public:
 
     AudioIOBase(const AudioIOBase&) = delete;
     AudioIOBase& operator=(const AudioIOBase&) = delete;
+
+    /**
+     * \brief Start the current VU meters
+     */
+    void StartMeters();
+
+    /**
+     * \brief Stop the current VU meters
+     */
+    void StopMeters();
+
+    /**
+     * \brief Reset the current VU meters
+     */
+    void ResetMeters();
 
     void SetCaptureMeter(
         const std::shared_ptr<AudacityProject>& project, const std::weak_ptr<IMeterSender>& meter);
@@ -289,6 +305,9 @@ public:
      * playing actual audio) */
     bool IsMonitoring() const;
 
+    /** \brief Stop input monitoring */
+    virtual void StopMonitoring() = 0;
+
     /* Mixer services are always available.  If no stream is running, these
      * methods use whatever device is specified by the preferences.  If a
      * stream *is* running, naturally they manipulate the mixer associated
@@ -296,6 +315,8 @@ public:
      * input is stuck at 1.0f (a volume gain is applied to output samples).
      */
     void SetMixer(int inputSource);
+
+    double GetPlaybackSampleRate() const { return mRate; }
 
 protected:
     static std::unique_ptr<AudioIOBase> ugAudioIO;

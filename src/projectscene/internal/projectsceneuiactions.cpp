@@ -135,6 +135,13 @@ static UiActionList STATIC_ACTIONS = {
              TranslatableString("action", "Pinned play head"),
              Checkable::Yes
              ),
+    UiAction("toggle-playback-on-ruler-click-enabled",
+             au::context::UiCtxAny,
+             au::context::CTX_ANY,
+             TranslatableString("action", "Click ruler to start playback"),
+             TranslatableString("action", "Click ruler to start playback"),
+             Checkable::Yes
+             ),
     // clip
     UiAction("clip-properties",
              au::context::UiCtxUnknown,
@@ -193,6 +200,12 @@ static UiActionList STATIC_ACTIONS = {
              muse::shortcuts::CTX_PROJECT_OPENED,
              TranslatableString("action", "Select track"),
              TranslatableString("action", "Select track")
+             ),
+    UiAction("track-range-selection",
+             au::context::UiCtxProjectOpened,
+             muse::shortcuts::CTX_PROJECT_OPENED,
+             TranslatableString("action", "Track range selection"),
+             TranslatableString("action", "Track range selection")
              ),
     UiAction("focus-prev-track",
              au::context::UiCtxProjectOpened,
@@ -319,8 +332,9 @@ const ToolConfig& ProjectSceneUiActions::defaultPlaybackToolBarConfig()
             // { "spectral-brush", false },
             // { "", true },
             { "split-cut", false },
-            { "copy", false },
-            { "paste", false },
+            { "action://trackedit/cut", false },
+            { "action://trackedit/copy", false },
+            { "action://trackedit/paste-default", false },
             { "", true },
             { "trim-audio-outside-selection", true },
             { "silence-audio-selection", true },

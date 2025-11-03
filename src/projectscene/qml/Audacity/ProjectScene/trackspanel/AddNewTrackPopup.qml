@@ -6,7 +6,6 @@ import Muse.UiComponents
 
 import Audacity.ProjectScene
 
-
 StyledPopupView {
     id: root
     objectName: "AddNewTrackPanel"
@@ -14,11 +13,13 @@ StyledPopupView {
     contentWidth: trackTypeOpts.width
     contentHeight: trackTypeOpts.height
 
-    modal: true
-
     property alias popupAnchorItem: root.anchorItem
 
     signal createTrack(type : int)
+
+    AddNewTrackPopupModel {
+        id: addModel
+    }
 
     NavigationPanel {
         id: navPanel
@@ -41,7 +42,7 @@ StyledPopupView {
             model: [
                 { type: TrackType.MONO, icon: IconCode.MICROPHONE, text: qsTrc("projectscene", "Mono"), enabled: true },
                 { type: TrackType.STEREO, icon: IconCode.MICROPHONE, text: qsTrc("projectscene", "Stereo"), enabled: true },
-                { type: TrackType.LABEL, icon: IconCode.LOOP_IN, text: qsTrc("projectscene", "Label"), enabled: false }
+                { type: TrackType.LABEL, icon: IconCode.LOOP_IN, text: qsTrc("projectscene", "Label"), enabled: addModel.isAddLabelAvailable() }
             ]
 
             FlatButton {

@@ -34,13 +34,17 @@
 #include "internal/undomanager.h"
 
 #include "view/deletebehaviorpanelmodel.h"
+#include "view/pastebehaviorpanelmodel.h"
 #include "view/tracknavigationmodel.h"
 
 #include "internal/au3/au3trackeditproject.h"
-#include "internal/au3/au3interaction.h"
 #include "internal/au3/au3selectioncontroller.h"
 #include "internal/au3/au3projecthistory.h"
 #include "internal/au3/au3trackeditclipboard.h"
+
+#include "internal/au3/au3tracksinteraction.h"
+#include "internal/au3/au3clipsinteraction.h"
+#include "internal/au3/au3labelsinteraction.h"
 
 #include "ui/iuiactionsregister.h"
 #include "ui/iinteractiveuriregister.h"
@@ -71,7 +75,6 @@ void TrackeditModule::registerExports()
 
     ioc()->registerExport<ITrackeditActionsController>(moduleName(), m_trackeditController);
     ioc()->registerExport<ITrackeditProjectCreator>(moduleName(), new Au3TrackeditProjectCreator());
-    ioc()->registerExport<ITrackAndClipOperations>(moduleName(), new Au3Interaction());
     ioc()->registerExport<ITrackeditInteraction>(moduleName(),
                                                  new TrackeditInteraction(std::make_unique<TrackeditOperationController>(
                                                                               std::make_unique<UndoManager>())));
@@ -80,21 +83,21 @@ void TrackeditModule::registerExports()
     ioc()->registerExport<ITrackeditClipboard>(moduleName(), new Au3TrackeditClipboard());
     ioc()->registerExport<ITrackeditConfiguration>(moduleName(), m_configuration);
     ioc()->registerExport<ITrackNavigationController>(moduleName(), m_trackNavigationController);
+
+    ioc()->registerExport<ITracksInteraction>(moduleName(), new Au3TracksInteraction());
+    ioc()->registerExport<IClipsInteraction>(moduleName(), new Au3ClipsInteraction());
+    ioc()->registerExport<ILabelsInteraction>(moduleName(), new Au3LabelsInteraction());
 }
 
 void TrackeditModule::registerUiTypes()
 {
     qmlRegisterType<DeleteBehaviorPanelModel>("Audacity.TrackEdit", 1, 0, "DeleteBehaviorPanelModel");
+    qmlRegisterType<PasteBehaviorPanelModel>("Audacity.TrackEdit", 1, 0, "PasteBehaviorPanelModel");
     qmlRegisterType<TrackNavigationModel>("Audacity.TrackEdit", 1, 0, "TrackNavigationModel");
 }
 
 void TrackeditModule::resolveImports()
 {
-    auto ar = ioc()->resolve<muse::ui::IUiActionsRegister>(moduleName());
-    if (ar) {
-        ar->reg(m_trackeditUiActions);
-    }
-
     auto ir = ioc()->resolve<muse::ui::IInteractiveUriRegister>(moduleName());
     if (ir) {
         ir->registerQmlUri(muse::Uri("audacity://trackedit/custom_rate"), "Audacity/TrackEdit/CustomRateDialog.qml");
@@ -114,13 +117,13 @@ void TrackeditModule::registerResources()
 void TrackeditModule::onInit(const muse::IApplication::RunMode&)
 {
     m_trackeditController->init();
-    m_trackeditUiActions->init();
     m_selectionController->init();
     m_configuration->init();
     m_trackNavigationController->init();
 
     TimeSignatureRestorer::reg();
 
+    m_trackeditUiActions->init();
     auto ar = ioc()->resolve<muse::ui::IUiActionsRegister>(moduleName());
     if (ar) {
         ar->reg(m_trackeditUiActions);

@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "global/async/notification.h"
 #include "global/types/retval.h"
 
 #include "trackedit/trackedittypes.h"
@@ -52,11 +53,11 @@ public:
     virtual muse::ValCh<bool> tracksVerticalScrollLocked() const = 0;
     virtual void setTracksVerticalScrollLocked(bool lock) = 0;
 
-    virtual void setClipEditStartTimeOffset(double val) = 0;
-    virtual double clipEditStartTimeOffset() const = 0;
+    virtual void setItemEditStartTimeOffset(double val) = 0;
+    virtual double itemEditStartTimeOffset() const = 0;
 
-    virtual void setClipEditEndTimeOffset(double val) = 0;
-    virtual double clipEditEndTimeOffset() const = 0;
+    virtual void setItemEditEndTimeOffset(double val) = 0;
+    virtual double itemEditEndTimeOffset() const = 0;
 
     virtual void setMoveInitiated(bool val) = 0;
     virtual bool moveInitiated() const = 0;
@@ -70,6 +71,8 @@ public:
 
     virtual void setZoomState(const ZoomState& state) = 0;
     virtual ZoomState zoomState() const = 0;
+
+    virtual muse::async::Notification rolledBack() const = 0;
 
     virtual muse::ValCh<bool> altPressed() const = 0;
     virtual muse::ValCh<bool> ctrlPressed() const = 0;

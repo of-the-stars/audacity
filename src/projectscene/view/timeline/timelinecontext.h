@@ -41,17 +41,19 @@ class TimelineContext : public QObject, public muse::async::Asyncable, public mu
     Q_PROPERTY(double selectionEndPosition READ selectionEndPosition NOTIFY selectionEndPositionChanged FINAL)
     Q_PROPERTY(bool selectionActive READ selectionActive NOTIFY selectionActiveChanged FINAL)
 
-    Q_PROPERTY(double selectedClipStartTime READ selectedClipStartTime NOTIFY selectedClipStartTimeChanged FINAL)
-    Q_PROPERTY(double selectedClipEndTime READ selectedClipEndTime NOTIFY selectedClipEndTimeChanged FINAL)
-    Q_PROPERTY(double selectedClipStartPosition READ selectedClipStartPosition NOTIFY selectedClipStartPositionChanged FINAL)
-    Q_PROPERTY(double selectedClipEndPosition READ selectedClipEndPosition NOTIFY selectedClipEndPositionChanged FINAL)
-    Q_PROPERTY(bool singleClipSelected READ singleClipSelected NOTIFY singleClipSelectedChanged FINAL)
+    Q_PROPERTY(double selectedItemStartTime READ selectedItemStartTime NOTIFY selectedItemStartTimeChanged FINAL)
+    Q_PROPERTY(double selectedItemEndTime READ selectedItemEndTime NOTIFY selectedItemEndTimeChanged FINAL)
+    Q_PROPERTY(double selectedItemStartPosition READ selectedItemStartPosition NOTIFY selectedItemStartPositionChanged FINAL)
+    Q_PROPERTY(double selectedItemEndPosition READ selectedItemEndPosition NOTIFY selectedItemEndPositionChanged FINAL)
+    Q_PROPERTY(bool singleItemSelected READ singleItemSelected NOTIFY singleItemSelectedChanged FINAL)
 
     Q_PROPERTY(qreal startHorizontalScrollPosition READ startHorizontalScrollPosition NOTIFY horizontalScrollChanged)
     Q_PROPERTY(qreal horizontalScrollbarSize READ horizontalScrollbarSize NOTIFY horizontalScrollChanged)
     Q_PROPERTY(
         qreal startVerticalScrollPosition READ startVerticalScrollPosition WRITE setStartVerticalScrollPosition NOTIFY verticalScrollChanged)
     Q_PROPERTY(qreal verticalScrollbarSize READ verticalScrollbarSize NOTIFY verticalScrollChanged)
+
+    Q_PROPERTY(bool playbackOnRulerClickEnabled READ playbackOnRulerClickEnabled NOTIFY playbackOnRulerClickEnabledChanged FINAL)
 
     muse::Inject<muse::actions::IActionsDispatcher> dispatcher;
     muse::Inject<context::IGlobalContext> globalContext;
@@ -84,11 +86,11 @@ public:
     double selectionEndPosition() const;
     bool selectionActive() const;
 
-    double selectedClipStartTime() const;
-    double selectedClipEndTime() const;
-    double selectedClipStartPosition() const;
-    double selectedClipEndPosition() const;
-    bool singleClipSelected() const;
+    double selectedItemStartTime() const;
+    double selectedItemEndTime() const;
+    double selectedItemStartPosition() const;
+    double selectedItemEndPosition() const;
+    bool singleItemSelected() const;
 
     Q_INVOKABLE void init(double frameWidth);
 
@@ -127,7 +129,9 @@ public:
 
     qreal verticalScrollbarSize() const;
 
-    void updateSelectedClipTime();
+    Q_INVOKABLE void updateSelectedItemTime();
+
+    bool playbackOnRulerClickEnabled() const;
 
 signals:
 
@@ -146,20 +150,24 @@ signals:
     void selectionEndPositionChanged();
     void selectionActiveChanged();
 
-    void selectedClipStartTimeChanged();
-    void selectedClipEndTimeChanged();
-    void selectedClipStartPositionChanged();
-    void selectedClipEndPositionChanged();
-    void singleClipSelectedChanged();
+    void selectedItemStartTimeChanged();
+    void selectedItemEndTimeChanged();
+    void selectedItemStartPositionChanged();
+    void selectedItemEndPositionChanged();
+    void singleItemSelectedChanged();
 
     void viewContentYChangeRequested(double contentY);
 
     void horizontalScrollChanged();
     void verticalScrollChanged();
 
+    void playbackOnRulerClickEnabledChanged();
+
 private:
     trackedit::ITrackeditProjectPtr trackEditProject() const;
     IProjectViewStatePtr viewState() const;
+    void initToViewState(double frameWidth);
+
     void onProjectChanged();
 
     void zoomIn();
@@ -185,9 +193,9 @@ private:
     void setSelectionEndTime(double time);
     void updateSelectionActive();
 
-    void setClipStartTime(double time);
-    void setClipEndTime(double time);
-    void updateSingleClipSelected();
+    void setItemStartTime(double time);
+    void setItemEndTime(double time);
+    void updateSingleItemSelected();
 
     void updateTimeSignature();
 
@@ -209,7 +217,7 @@ private:
 
     double m_lastZoomEndTime = 0.0;
 
-    double m_zoom = 1.0; // see init
+    double m_zoom = 1.0; // see initToViewState
     int m_BPM = 120;
     // time signature
     int m_timeSigUpper = 4;
@@ -219,9 +227,9 @@ private:
     trackedit::secs_t m_selectionEndTime = -1.0;
     bool m_selectionActive = false;
 
-    trackedit::secs_t m_selectedClipStartTime = -1.0;
-    trackedit::secs_t m_selectedClipEndTime = -1.0;
-    bool m_singleClipSelected = false;
+    trackedit::secs_t m_selectedItemStartTime = -1.0;
+    trackedit::secs_t m_selectedItemEndTime = -1.0;
+    bool m_singleItemSelected = false;
 
     std::shared_ptr<SnapTimeFormatter> m_snapTimeFormatter;
 

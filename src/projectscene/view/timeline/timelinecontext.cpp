@@ -53,38 +53,22 @@ TimelineContext::TimelineContext(QObject* parent)
 
 void TimelineContext::init(double frameWidth)
 {
-    auto vs = this->viewState();
-    ZoomState zoomState;
+    initToViewState(frameWidth);
 
-    if (vs) {
-        zoomState = vs->zoomState();
+    if (const auto vs = viewState()) {
+        vs->rolledBack().onNotify(this, [this]() {
+            initToViewState(m_frameWidth);
+        });
     }
-
-    if (!muse::RealIsEqual(zoomState.zoom, 0.0)) {
-        m_zoom = zoomState.zoom;
-    } else {
-        double initialTimeRange = trackEditProject() ? trackEditProject()->totalTime().to_double() * 2 : 0.0;
-        if (muse::is_zero(initialTimeRange)) {
-            m_zoom = configuration()->zoom();
-        } else {
-            m_zoom = m_frameWidth / initialTimeRange;
-        }
-    }
-    emit zoomChanged();
-
-    m_frameWidth = frameWidth;
-    m_frameStartTime = zoomState.frameStart;
-    emit frameStartTimeChanged();
-    m_frameEndTime = positionToTime(frameWidth);
-
-    m_lastZoomEndTime = m_frameEndTime;
-
-    emit frameEndTimeChanged();
-    emit frameTimeChanged();
 
     selectionController()->clipsSelected().onReceive(this, [this](const trackedit::ClipKeyList&) {
-        updateSingleClipSelected();
-        updateSelectedClipTime();
+        updateSingleItemSelected();
+        updateSelectedItemTime();
+    });
+
+    selectionController()->labelsSelected().onReceive(this, [this](const trackedit::LabelKeyList&) {
+        updateSingleItemSelected();
+        updateSelectedItemTime();
     });
 
     m_selectionStartTime = selectionController()->dataSelectedStartTime();
@@ -115,9 +99,9 @@ void TimelineContext::init(double frameWidth)
         emit selectionEndTimeChanged();
         emit selectionStartPositionChanged();
         emit selectionEndPositionChanged();
-        if (singleClipSelected()) {
-            emit selectedClipStartPositionChanged();
-            emit selectedClipEndPositionChanged();
+        if (singleItemSelected()) {
+            emit selectedItemStartPositionChanged();
+            emit selectedItemEndPositionChanged();
         }
     });
 
@@ -126,8 +110,45 @@ void TimelineContext::init(double frameWidth)
     dispatcher()->reg(this, "zoom-to-selection", this, &TimelineContext::fitSelectionToWidth);
     dispatcher()->reg(this, "zoom-to-fit-project", this, &TimelineContext::fitProjectToWidth);
 
-    onProjectChanged();
+    configuration()->playbackOnRulerClickEnabledChanged().onNotify(this, [this]() {
+        emit playbackOnRulerClickEnabledChanged();
+    });
 
+    onProjectChanged();
+}
+
+void TimelineContext::initToViewState(double frameWidth)
+{
+    auto vs = this->viewState();
+    ZoomState zoomState;
+
+    if (vs) {
+        zoomState = vs->zoomState();
+    }
+
+    if (!muse::RealIsEqual(zoomState.zoom, 0.0)) {
+        m_zoom = zoomState.zoom;
+    } else {
+        double initialTimeRange = trackEditProject() ? trackEditProject()->totalTime().to_double() * 2 : 0.0;
+        if (muse::is_zero(initialTimeRange)) {
+            m_zoom = configuration()->zoom();
+        } else {
+            m_zoom = m_frameWidth / initialTimeRange;
+        }
+    }
+    emit zoomChanged();
+
+    m_frameWidth = frameWidth;
+    m_frameStartTime = zoomState.frameStart;
+    emit frameStartTimeChanged();
+    m_frameEndTime = positionToTime(frameWidth);
+
+    m_lastZoomEndTime = m_frameEndTime;
+
+    saveViewState();
+
+    emit frameEndTimeChanged();
+    emit frameTimeChanged();
     emit horizontalScrollChanged();
     emit verticalScrollChanged();
 }
@@ -781,29 +802,29 @@ bool TimelineContext::selectionActive() const
     return m_selectionActive;
 }
 
-double TimelineContext::selectedClipStartTime() const
+double TimelineContext::selectedItemStartTime() const
 {
-    return m_selectedClipStartTime.raw();
+    return m_selectedItemStartTime.raw();
 }
 
-double TimelineContext::selectedClipEndTime() const
+double TimelineContext::selectedItemEndTime() const
 {
-    return m_selectedClipEndTime.raw();
+    return m_selectedItemEndTime.raw();
 }
 
-double TimelineContext::selectedClipStartPosition() const
+double TimelineContext::selectedItemStartPosition() const
 {
-    return timeToPosition(m_selectedClipStartTime);
+    return timeToPosition(m_selectedItemStartTime);
 }
 
-double TimelineContext::selectedClipEndPosition() const
+double TimelineContext::selectedItemEndPosition() const
 {
-    return timeToPosition(m_selectedClipEndTime);
+    return timeToPosition(m_selectedItemEndTime);
 }
 
-bool TimelineContext::singleClipSelected() const
+bool TimelineContext::singleItemSelected() const
 {
-    return m_singleClipSelected;
+    return m_singleItemSelected;
 }
 
 void TimelineContext::updateSelectionActive()
@@ -819,40 +840,44 @@ void TimelineContext::updateSelectionActive()
     emit selectionActiveChanged();
 }
 
-void TimelineContext::setClipStartTime(double time)
+void TimelineContext::setItemStartTime(double time)
 {
-    if (m_selectedClipStartTime != time) {
-        m_selectedClipStartTime = time;
-        emit selectedClipStartTimeChanged();
-        emit selectedClipStartPositionChanged();
+    if (m_selectedItemStartTime != time) {
+        m_selectedItemStartTime = time;
+        emit selectedItemStartTimeChanged();
+        emit selectedItemStartPositionChanged();
     }
 }
 
-void TimelineContext::setClipEndTime(double time)
+void TimelineContext::setItemEndTime(double time)
 {
-    if (m_selectedClipEndTime != time) {
-        m_selectedClipEndTime = time;
-        emit selectedClipEndTimeChanged();
-        emit selectedClipEndPositionChanged();
+    if (m_selectedItemEndTime != time) {
+        m_selectedItemEndTime = time;
+        emit selectedItemEndTimeChanged();
+        emit selectedItemEndPositionChanged();
     }
 }
 
-void TimelineContext::updateSingleClipSelected()
+void TimelineContext::updateSingleItemSelected()
 {
-    bool selected = selectionController()->selectedClips().size() == 1;
+    bool selected = (selectionController()->selectedClips().size() == 1)
+                    || (selectionController()->selectedLabels().size() == 1);
 
-    if (m_singleClipSelected == selected) {
+    if (m_singleItemSelected == selected) {
         return;
     }
-    m_singleClipSelected = selected;
-    emit singleClipSelectedChanged();
+    m_singleItemSelected = selected;
+    emit singleItemSelectedChanged();
 }
 
-void TimelineContext::updateSelectedClipTime()
+void TimelineContext::updateSelectedItemTime()
 {
-    if (singleClipSelected()) {
-        setClipStartTime(selectionController()->selectedClipStartTime());
-        setClipEndTime(selectionController()->selectedClipEndTime());
+    if (selectionController()->selectedClips().size() == 1) {
+        setItemStartTime(selectionController()->selectedClipStartTime());
+        setItemEndTime(selectionController()->selectedClipEndTime());
+    } else if (selectionController()->selectedLabels().size() == 1) {
+        setItemStartTime(selectionController()->selectedLabelStartTime());
+        setItemEndTime(selectionController()->selectedLabelEndTime());
     }
 }
 
@@ -906,6 +931,9 @@ double TimelineContext::timeToContentPosition(double time) const
 void TimelineContext::saveViewState() const
 {
     auto vs = this->viewState();
+    if (!vs) {
+        return;
+    }
     ZoomState state = {
         m_zoom, m_frameStartTime, vs->tracksVerticalOffset().val
     };
@@ -970,4 +998,9 @@ void TimelineContext::setStartVerticalScrollPosition(qreal position)
 au::context::IPlaybackStatePtr TimelineContext::playbackState() const
 {
     return globalContext()->playbackState();
+}
+
+bool TimelineContext::playbackOnRulerClickEnabled() const
+{
+    return configuration()->playbackOnRulerClickEnabled();
 }

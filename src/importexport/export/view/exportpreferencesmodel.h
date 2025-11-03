@@ -11,9 +11,12 @@
 #include "actions/iactionsdispatcher.h"
 #include "iinteractive.h"
 #include "io/ifilesystem.h"
+#include "appshell/iappshellconfiguration.h"
 #include "context/iglobalcontext.h"
 #include "iexportconfiguration.h"
 #include "iexporter.h"
+#include "playback/iplayback.h"
+#include "trackedit/iselectioncontroller.h"
 
 namespace au::importexport {
 class ExportPreferencesModel : public QObject, public muse::async::Asyncable
@@ -23,9 +26,12 @@ class ExportPreferencesModel : public QObject, public muse::async::Asyncable
     muse::Inject<muse::actions::IActionsDispatcher> dispatcher;
     muse::Inject<muse::IInteractive> interactive;
     muse::Inject<muse::io::IFileSystem> fileSystem;
+    muse::Inject<appshell::IAppShellConfiguration> configuration;
     muse::Inject<context::IGlobalContext> globalContext;
     muse::Inject<IExportConfiguration> exportConfiguration;
     muse::Inject<IExporter> exporter;
+    muse::Inject<au::playback::IPlayback> playback;
+    muse::Inject<trackedit::ISelectionController> selectionController;
 
     Q_PROPERTY(QString currentProcess READ currentProcess NOTIFY currentProcessChanged)
     Q_PROPERTY(QVariantList processList READ processList NOTIFY processListChanged)
@@ -50,8 +56,11 @@ class ExportPreferencesModel : public QObject, public muse::async::Asyncable
 
 public:
     explicit ExportPreferencesModel(QObject* parent = nullptr);
+    ~ExportPreferencesModel();
 
     Q_INVOKABLE void init();
+    Q_INVOKABLE void apply();
+    Q_INVOKABLE void cancel();
 
     QString currentProcess() const;
     Q_INVOKABLE void setCurrentProcess(const QString& process);
@@ -110,5 +119,6 @@ private:
 
     QString m_filename;
     std::vector<std::pair<int, QString> > m_sampleRateMapping;
+    bool m_resetSampleRate = true;
 };
 }

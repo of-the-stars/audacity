@@ -286,7 +286,7 @@ AudioIO::AudioIO()
     mNumCaptureChannels = 0;
     mSilenceLevel = 0.0;
 
-    mOutputMeter.reset();
+    ResetMeters();
 
     PaError err = Pa_Initialize();
 
@@ -517,8 +517,7 @@ bool AudioIO::StartPortAudioStream(const AudioIOStartStreamOptions& options,
         return false;
     }
 
-    mInputMeter.reset();
-    mOutputMeter.reset();
+    ResetMeters();
 
     mLastPaError = paNoError;
     // pick a rate to do the audio I/O at, from those available. The project
@@ -662,15 +661,6 @@ bool AudioIO::StartPortAudioStream(const AudioIOStartStreamOptions& options,
         SetCaptureMeter(mOwningProject.lock(), options.captureMeter);
     }
 
-    auto outputMeter = mOutputMeter.lock();
-    if (outputMeter) {
-        outputMeter->setSampleRate(mRate);
-    }
-    auto inputMeter = mInputMeter.lock();
-    if (inputMeter) {
-        inputMeter->setSampleRate(mRate);
-    }
-
     const auto deviceInfo = usePlayback
                             ? Pa_GetDeviceInfo(playbackParameters.device)
                             : Pa_GetDeviceInfo(captureParameters.device);
@@ -734,7 +724,8 @@ bool AudioIO::StartPortAudioStream(const AudioIOStartStreamOptions& options,
                   : // Otherwise, use the (likely incorrect) latency reported by PA
                   stream->outputLatency;
 
-            mHardwarePlaybackLatencyFrames = lrint(outputLatency * mRate);
+            mHardwarePlaybackLatencyMs = outputLatency * 1000.0;
+            mHardwarePlaybackLatencyFrames = lrint(outputLatency * stream->sampleRate);
 #ifdef __WXGTK__
             // DV: When using ALSA PortAudio does not report the buffer size.
             // Instead, it reports periodSize * (periodsCount - 1). It is impossible
@@ -814,14 +805,23 @@ void AudioIO::ResetOwningProject()
 
 void AudioIO::StartMonitoring(const AudioIOStartStreamOptions& options)
 {
-    if (mPortStreamV19 || mStreamToken) {
+    if (IsBusy()) {
         return;
     }
 
-    bool success;
-    auto captureFormat = QualitySettings::SampleFormatChoice();
-    auto captureChannels = AudioIORecordChannels.Read();
-    gPrefs->Read(wxT("/AudioIO/SWPlaythrough"), &mSoftwarePlaythrough, false);
+    if (IsMonitoring() && options.inputMonitoring != mSoftwarePlaythrough) {
+        // muting or unmuting monitoring, so we need to restart it
+        StopMonitoring();
+    }
+
+    if (IsMonitoring()) {
+        // already monitoring, nothing to do
+        return;
+    }
+
+    const auto captureFormat = QualitySettings::SampleFormatChoice();
+    const auto captureChannels = AudioIORecordChannels.Read();
+    mSoftwarePlaythrough = options.inputMonitoring;
     int playbackChannels = 0;
 
     if (mSoftwarePlaythrough) {
@@ -833,15 +833,15 @@ void AudioIO::StartMonitoring(const AudioIOStartStreamOptions& options)
     mUsingAlsa = false;
     mCaptureFormat = captureFormat;
     mCaptureRate = 44100.0; // Shouldn't matter
-    success = StartPortAudioStream(options,
-                                   static_cast<unsigned int>(playbackChannels),
-                                   static_cast<unsigned int>(captureChannels));
+    const bool success = StartPortAudioStream(options,
+                                              static_cast<unsigned int>(playbackChannels),
+                                              static_cast<unsigned int>(captureChannels));
 
-    auto pOwningProject = mOwningProject.lock();
+    const auto pOwningProject = mOwningProject.lock();
     if (!success) {
         using namespace BasicUI;
-        auto msg = XO("Error opening recording device.\nError code: %s")
-                   .Format(Get()->LastPaErrorString());
+        const auto msg = XO("Error opening recording device.\nError code: %s")
+                         .Format(Get()->LastPaErrorString());
         ShowErrorDialog(*ProjectFramePlacement(pOwningProject.get()),
                         XO("Error"), msg, wxT("Error_opening_sound_device"),
                         ErrorDialogOptions { ErrorDialogType::ModalErrorReport });
@@ -864,6 +864,22 @@ void AudioIO::StartMonitoring(const AudioIOStartStreamOptions& options)
     }
 }
 
+void AudioIO::StopMonitoring()
+{
+    if (IsMonitoring()) {
+        StopStream();
+        WaitWhileBusy();
+    }
+}
+
+void AudioIO::WaitWhileBusy() const
+{
+    while (IsBusy()) {
+        using namespace std::chrono;
+        std::this_thread::sleep_for(100ms);
+    }
+}
+
 int AudioIO::StartStream(const TransportSequences& sequences,
                          double t0, double t1, double mixerLimit,
                          const AudioIOStartStreamOptions& options)
@@ -878,8 +894,6 @@ int AudioIO::StartStream(const TransportSequences& sequences,
     }
                ));
 
-    mPurgeIsNeeded.store(false, std::memory_order_relaxed);
-
     const auto& pStartTime = options.pStartTime;
     t1 = std::min(t1, mixerLimit);
 
@@ -892,6 +906,8 @@ int AudioIO::StartStream(const TransportSequences& sequences,
     if (IsBusy()) {
         return 0;
     }
+
+    StopMonitoring();
 
     // We just want to set mStreamToken to -1 - this way avoids
     // an extremely rare but possible race condition, if two functions
@@ -909,15 +925,7 @@ int AudioIO::StartStream(const TransportSequences& sequences,
     //       captureChannels == mNumCaptureChannels &&
     //       captureFormat == mCaptureFormat) {
 
-    if (mPortStreamV19) {
-        StopStream();
-        while (mPortStreamV19) {
-            using namespace std::chrono;
-            std::this_thread::sleep_for(50ms);
-        }
-    }
-
-    gPrefs->Read(wxT("/AudioIO/SWPlaythrough"), &mSoftwarePlaythrough, false);
+    mSoftwarePlaythrough = options.inputMonitoring;
     mPauseRec = SoundActivatedRecord.Read();
     gPrefs->Read(wxT("/AudioIO/Microfades"), &mbMicroFades, false);
     int silenceLevelDB;
@@ -1264,7 +1272,7 @@ bool AudioIO::AllocateBuffers(
     mCaptureRingBufferSecs
         =4.5 + 0.5 * std::min(size_t(16), mNumCaptureChannels);
     mMinCaptureSecsToCopy
-        =0.2 + 0.2 * std::min(size_t(16), mNumCaptureChannels);
+        =0.2;
 
     bool bDone;
     do{
@@ -1489,28 +1497,10 @@ bool AudioIO::IsAvailable(AudacityProject& project) const
     return !pOwningProject || pOwningProject.get() == &project;
 }
 
-void AudioIO::StartMeters()
-{
-    if (auto pInputMeter = mInputMeter.lock()) {
-        pInputMeter->start();
-    }
-    if (auto pOutputMeter = mOutputMeter.lock()) {
-        pOutputMeter->start();
-    }
-}
-
 void AudioIO::StopStream()
 {
-    if (auto pInputMeter = mInputMeter.lock()) {
-        pInputMeter->stop();
-    }
-    mInputMeter.reset();
-    if (auto pOutputMeter = mOutputMeter.lock()) {
-        pOutputMeter->stop();
-    }
-    mOutputMeter.reset();
-
-    mPurgeIsNeeded.store(false, std::memory_order_relaxed);
+    StopMeters();
+    ResetMeters();
 
     auto cleanup = finally([this] {
         ClearRecordingException();
@@ -1787,10 +1777,6 @@ void AudioIO::SetPaused(bool state, bool publish)
     }
 
     mPaused.store(state, std::memory_order_relaxed);
-
-    if (state) {
-        mPurgeIsNeeded.store(state, std::memory_order_relaxed);
-    }
 
     if (publish) {
         Publish({ mOwningProject.lock().get(), AudioIOEvent::PAUSE, state });
@@ -2369,6 +2355,8 @@ void AudioIO::DrainRecordBuffers()
         // AudacityException::DelayedHandlerAction prevents redundant message
         // boxes.
         StopStream();
+        WaitWhileBusy();
+
         DefaultDelayedHandlerAction(pException);
         for (auto& pSequence: mCaptureSequences) {
             pSequence->RepairChannels();
@@ -2639,32 +2627,6 @@ void ClampBuffer(float* pBuffer, unsigned long len)
     }
 }
 
-void AudioIoCallback::PurgeAfterPause(unsigned long framesPerBuffer, float** const sampleBuffer)
-{
-    size_t nAvailable = GetCommonlyReadyPlayback();
-    const auto wasPaused = mPurgeIsNeeded.exchange(false);
-
-    for (size_t n = 0; n < mNumPlaybackChannels; ++n) {
-        if (wasPaused && !IsPaused()) {
-            auto totalPurged = static_cast<int>(nAvailable);
-
-            while (totalPurged > 0) {
-                mPlaybackBuffers[n]->Get(reinterpret_cast<samplePtr>(sampleBuffer[n]),
-                                         floatSample,
-                                         framesPerBuffer);
-
-                for (auto& track : mPlaybackTracks) {
-                    track.mBuffers[n]->Get(reinterpret_cast<samplePtr>(sampleBuffer[n]),
-                                           floatSample,
-                                           framesPerBuffer);
-                }
-
-                totalPurged -= framesPerBuffer;
-            }
-        }
-    }
-}
-
 // return true, IFF we have fully handled the callback.
 //
 // Mix and copy to PortAudio's output buffer
@@ -2700,14 +2662,13 @@ bool AudioIoCallback::FillOutputBuffers(
     }
 
     // Choose a common size to take from all ring buffers
-    const auto toGet
-        =std::min<size_t>(framesPerBuffer, GetCommonlyReadyPlayback());
+    const auto currentlyAvailableFramesAcrossBuffers = std::min<size_t>(framesPerBuffer, GetCommonlyReadyPlayback());
 
     // Poke: If there are no playback sequences, then check playback
     // completion condition and do early return
     // PRL:  Also consume frbom the single playback ring buffer
     if (numPlaybackSequences == 0) {
-        mMaxFramesOutput = mPlaybackBuffers[0]->Discard(toGet);
+        mMaxFramesOutput = mPlaybackBuffers[0]->Discard(currentlyAvailableFramesAcrossBuffers);
         CallbackCheckCompletion(mCallbackReturn, 0);
         mLastPlaybackTimeMillis = ::wxGetUTCTimeMillis();
         return false;
@@ -2740,32 +2701,30 @@ bool AudioIoCallback::FillOutputBuffers(
         playbackVolume = 0.0;
     }
 
-    PurgeAfterPause(framesPerBuffer, tempBufs);
-
     for (unsigned n = 0; n < numPlaybackChannels; ++n) {
-        decltype(framesPerBuffer) len = mPlaybackBuffers[n]->Get(
+        decltype(framesPerBuffer) numberOfRetrievedFrames = mPlaybackBuffers[n]->Get(
             reinterpret_cast<samplePtr>(tempBufs[n]),
             floatSample,
-            toGet
+            currentlyAvailableFramesAcrossBuffers
             );
 
-        if (len < framesPerBuffer) {
+        if (numberOfRetrievedFrames < framesPerBuffer) {
             // This used to happen normally at the end of non-looping
             // plays, but it can also be an anomalous case where the
             // supply from SequenceBufferExchange fails to keep up with the
             // real-time demand in this thread (see bug 1932). We
             // must supply something to the sound card, so pad it with
             // zeroes and not random garbage.
-            memset((void*)&tempBufs[n][len], 0,
-                   (framesPerBuffer - len) * sizeof(float));
+            memset((void*)&tempBufs[n][numberOfRetrievedFrames], 0,
+                   (framesPerBuffer - numberOfRetrievedFrames) * sizeof(float));
         }
 
         // PRL:  More recent rewrites of SequenceBufferExchange should guarantee a
         // padding out of the ring buffers so that equal lengths are
         // available, so maxLen ought to increase from 0 only once
-        mMaxFramesOutput = std::max(mMaxFramesOutput, len);
+        mMaxFramesOutput = std::max(mMaxFramesOutput, numberOfRetrievedFrames);
 
-        len = mMaxFramesOutput;
+        numberOfRetrievedFrames = mMaxFramesOutput;
 
         // Realtime effect transformation of the sound used to happen here
         // but it is now done already on the producer side of the RingBuffer
@@ -2779,11 +2738,18 @@ bool AudioIoCallback::FillOutputBuffers(
         // Each channel in the sequences can output to more than one channel on
         // the device. For example mono channels output to both left and right
         // output channels.
-        if (len > 0) {
+        if (numberOfRetrievedFrames > 0) {
+            if (n == 0) {
+                using namespace std::chrono;
+                const auto now = steady_clock::now();
+                const auto adcTime = now + milliseconds(static_cast<int>(mHardwarePlaybackLatencyMs));
+                mAudioCallbackInfoQueue.Put({ adcTime, static_cast<int>(numberOfRetrievedFrames) });
+            }
+
             // Output volume emulation: possibly copy meter samples, then
             // apply volume, then copy to the output buffer
             if (outputMeterFloats != outputFloats) {
-                for ( unsigned i = 0; i < len; ++i) {
+                for ( unsigned i = 0; i < numberOfRetrievedFrames; ++i) {
                     outputMeterFloats[numPlaybackChannels * i + n]
                         +=playbackVolume * tempBufs[n][i];
                 }
@@ -2799,13 +2765,13 @@ bool AudioIoCallback::FillOutputBuffers(
             // PRL todo:  choose denominator differently, so it doesn't depend on
             // framesPerBuffer, which is influenced by the portAudio implementation in
             // opaque ways
-            const float deltaVolume = (playbackVolume - oldVolume) / len;
-            for (unsigned i = 0; i < len; i++) {
+            const float deltaVolume = (playbackVolume - oldVolume) / numberOfRetrievedFrames;
+            for (unsigned i = 0; i < numberOfRetrievedFrames; i++) {
                 outputFloats[numPlaybackChannels * i + n]
                     +=(oldVolume + deltaVolume * i) * tempBufs[n][i];
             }
         }
-        CallbackCheckCompletion(mCallbackReturn, len);
+        CallbackCheckCompletion(mCallbackReturn, numberOfRetrievedFrames);
     }
 
     mOldPlaybackVolume = playbackVolume;
@@ -2831,7 +2797,7 @@ void AudioIoCallback::UpdateTimePosition(unsigned long framesPerBuffer)
 
     // Update the position seen by drawing code
     mPlaybackSchedule.SetSequenceTime(
-        mPlaybackSchedule.mTimeQueue.Consumer(mMaxFramesOutput, mRate));
+        mPlaybackSchedule.mTimeQueue.Consumer(framesPerBuffer, mRate));
 }
 
 // return true, IFF we have fully handled the callback.
@@ -3036,8 +3002,7 @@ void AudioIoCallback::DoPlaythrough(
 
 /* Send data to recording VU meter if applicable */
 // Also computes rms
-void AudioIoCallback::SendVuInputMeterData(const float* inputSamples, unsigned long framesPerBuffer,
-                                           const PaStreamCallbackTimeInfo* timeInfo)
+void AudioIoCallback::SendVuInputMeterData(const float* inputSamples, unsigned long framesPerBuffer, const TimePoint& dacTime)
 {
     if (framesPerBuffer == 0) {
         return;
@@ -3052,12 +3017,11 @@ void AudioIoCallback::SendVuInputMeterData(const float* inputSamples, unsigned l
         return;
     }
 
-    PushInputMeterValues(inputMeter, inputSamples, framesPerBuffer, timeInfo);
+    PushInputMeterValues(inputMeter, inputSamples, framesPerBuffer, dacTime);
 }
 
 /* Send data to playback VU meter if applicable */
-void AudioIoCallback::SendVuOutputMeterData(const float* outputMeterFloats, unsigned long framesPerBuffer,
-                                            const PaStreamCallbackTimeInfo* timeInfo)
+void AudioIoCallback::SendVuOutputMeterData(const float* outputMeterFloats, unsigned long framesPerBuffer, const TimePoint& dacTime)
 {
     if (framesPerBuffer == 0) {
         return;
@@ -3072,12 +3036,12 @@ void AudioIoCallback::SendVuOutputMeterData(const float* outputMeterFloats, unsi
         return;
     }
 
-    PushMainMeterValues(outputMeter, outputMeterFloats, mNumPlaybackChannels, framesPerBuffer, timeInfo);
-    PushTrackMeterValues(outputMeter, framesPerBuffer, timeInfo);
+    PushMasterOutputMeterValues(outputMeter, outputMeterFloats, mNumPlaybackChannels, framesPerBuffer, dacTime);
+    PushTrackMeterValues(outputMeter, framesPerBuffer, dacTime);
 }
 
-void AudioIoCallback::PushInputMeterValues(const std::shared_ptr<IMeterSender>& sender, const float* values, unsigned long frames,
-                                           const PaStreamCallbackTimeInfo* timeInfo)
+void AudioIoCallback::PushInputMeterValues(const IMeterSenderPtr& sender, const float* values, unsigned long frames,
+                                           const TimePoint& dacTime)
 {
     if (frames == 0) {
         return;
@@ -3089,7 +3053,7 @@ void AudioIoCallback::PushInputMeterValues(const std::shared_ptr<IMeterSender>& 
         auto nChannels = sequence->NChannels();
         const int64_t id = sequence->GetRecordableSequenceId();
         for (size_t ch = 0; ch < nChannels; ch++) {
-            sender->push(ch, { sptr + ch, frames, nChannels, timeInfo->inputBufferAdcTime }, IMeterSender::TrackId { id });
+            sender->push(ch, { sptr + ch, frames, nChannels, dacTime }, IMeterSender::TrackId { id });
         }
     }
 
@@ -3097,7 +3061,7 @@ void AudioIoCallback::PushInputMeterValues(const std::shared_ptr<IMeterSender>& 
     // If the input source has more than 2 channels it will be splitted on multiple mono sequences
     if (mNumCaptureChannels <= 2) {
         for (size_t ch = 0; ch < mNumCaptureChannels; ++ch) {
-            sender->push(ch, { sptr + ch, frames, mNumCaptureChannels, timeInfo->inputBufferAdcTime });
+            sender->push(ch, { sptr + ch, frames, mNumCaptureChannels, dacTime });
         }
     } else {
         constexpr size_t maxMainTrackChannels = 2;
@@ -3114,23 +3078,23 @@ void AudioIoCallback::PushInputMeterValues(const std::shared_ptr<IMeterSender>& 
         }
 
         for (size_t ch = 0; ch < maxMainTrackChannels; ++ch) {
-            sender->push(ch, { mainTrackInput + ch * frames, frames, 1, timeInfo->inputBufferAdcTime });
+            sender->push(ch, { mainTrackInput + ch * frames, frames, 1, dacTime });
         }
     }
 }
 
-void AudioIoCallback::PushMainMeterValues(const std::shared_ptr<IMeterSender>& sender, const float* values, uint8_t channels,
-                                          unsigned long frames, const PaStreamCallbackTimeInfo* timeInfo)
+void AudioIoCallback::PushMasterOutputMeterValues(const IMeterSenderPtr& sender, const float* values, uint8_t channels,
+                                                  unsigned long frames,
+                                                  const TimePoint& dacTime)
 {
     auto sptr = values;
     for (size_t ch = 0; ch < channels; ++ch) {
         auto sptr = values + ch;
-        sender->push(ch, { sptr, frames, channels, timeInfo->outputBufferDacTime });
+        sender->push(ch, { sptr, frames, channels, dacTime });
     }
 }
 
-void AudioIoCallback::PushTrackMeterValues(const std::shared_ptr<IMeterSender>& sender, unsigned long frames,
-                                           const PaStreamCallbackTimeInfo* timeInfo)
+void AudioIoCallback::PushTrackMeterValues(const IMeterSenderPtr& sender, unsigned long frames, const TimePoint& dacTime)
 {
     auto stackBuffer = stackAllocate(float, frames);
 
@@ -3144,7 +3108,7 @@ void AudioIoCallback::PushTrackMeterValues(const std::shared_ptr<IMeterSender>& 
                 frames
                 );
 
-            sender->push(nch, { stackBuffer, len, 1, timeInfo->outputBufferDacTime }, IMeterSender::TrackId { track.trackId() });
+            sender->push(nch, { stackBuffer, len, 1, dacTime }, IMeterSender::TrackId { track.trackId() });
         }
     }
 }
@@ -3245,6 +3209,9 @@ int AudioIoCallback::AudioCallback(
                                    : outputBuffer;
     // ----- END of MEMORY ALLOCATIONS ------------------------------------------
 
+    const auto levelDisplayTime = std::chrono::steady_clock::now()
+                                  + std::chrono::milliseconds(static_cast<int>(mHardwarePlaybackLatencyMs));
+
     if (inputBuffer && numCaptureChannels) {
         float* inputSamples;
 
@@ -3256,7 +3223,7 @@ int AudioIoCallback::AudioCallback(
             inputSamples = tempFloats;
         }
 
-        SendVuInputMeterData(inputSamples, framesPerBuffer, timeInfo);
+        SendVuInputMeterData(inputSamples, framesPerBuffer, levelDisplayTime);
 
         // This function may queue up a pause or resume.
         // TODO this is a bit dodgy as it toggles the Pause, and
@@ -3294,9 +3261,6 @@ int AudioIoCallback::AudioCallback(
         return mCallbackReturn;
     }
 
-    // To move the cursor onwards.  (uses mMaxFramesOutput)
-    UpdateTimePosition(framesPerBuffer);
-
     // To capture input into sequence (sound from microphone)
     DrainInputBuffers(
         inputBuffer,
@@ -3304,7 +3268,7 @@ int AudioIoCallback::AudioCallback(
         statusFlags,
         tempFloats);
 
-    SendVuOutputMeterData(outputMeterFloats, framesPerBuffer, timeInfo);
+    SendVuOutputMeterData(outputMeterFloats, framesPerBuffer, levelDisplayTime);
 
     return mCallbackReturn;
 }

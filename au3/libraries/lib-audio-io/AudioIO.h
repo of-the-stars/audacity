@@ -17,6 +17,7 @@
 #include "AudioIOSequences.h"
 #include "PlaybackSchedule.h" // member variable
 #include "RingBuffer.h"
+#include "LockFreeQueue.h"
 
 #include <functional>
 #include <memory>
@@ -186,6 +187,14 @@ public:
     { return mListener.lock(); }
     void SetListener(const std::shared_ptr< AudioIOListener >& listener);
 
+    struct AudioCallbackInfo {
+        TimePoint dacTime;
+        int numSamples = 0;
+    };
+    using AudioCallbackInfoQueue = LockFreeQueue<AudioCallbackInfo>;
+
+    AudioCallbackInfoQueue& GetAudioCallbackInfoQueue() { return mAudioCallbackInfoQueue; }
+
     // Part of the callback
     int CallbackDoSeek();
 
@@ -211,14 +220,12 @@ public:
         unsigned long framesPerBuffer);
     void DoPlaythrough(
         constSamplePtr inputBuffer, float* outputBuffer, unsigned long framesPerBuffer, float* outputMeterFloats);
-    void SendVuInputMeterData(const float* inputSamples, unsigned long framesPerBuffer, const PaStreamCallbackTimeInfo* timeInfo);
-    void SendVuOutputMeterData(
-        const float* outputMeterFloats, unsigned long framesPerBuffer, const PaStreamCallbackTimeInfo* timeInfo);
-    void PushMainMeterValues(const std::shared_ptr<IMeterSender>& sender, const float* values, uint8_t channels, unsigned long frames,
-                             const PaStreamCallbackTimeInfo* timeInfo);
-    void PushTrackMeterValues(const std::shared_ptr<IMeterSender>& sender, unsigned long frames, const PaStreamCallbackTimeInfo* timeInfo);
-    void PushInputMeterValues(const std::shared_ptr<IMeterSender>& sender, const float* values, unsigned long frames,
-                              const PaStreamCallbackTimeInfo* timeInfo);
+    void SendVuInputMeterData(const float* inputSamples, unsigned long framesPerBuffer, const TimePoint& dacTime);
+    void SendVuOutputMeterData(const float* outputMeterFloats, unsigned long framesPerBuffer, const TimePoint& dacTime);
+    void PushMasterOutputMeterValues(const IMeterSenderPtr& sender, const float* values, uint8_t channels, unsigned long frames,
+                             const TimePoint& dacTime);
+    void PushTrackMeterValues(const IMeterSenderPtr& sender, unsigned long frames, const TimePoint& dacTime);
+    void PushInputMeterValues(const IMeterSenderPtr& sender, const float* values, unsigned long frames, const TimePoint& dacTime);
 
     /** \brief Get the number of audio samples ready in all of the playback
     * buffers.
@@ -273,7 +280,8 @@ public:
     /// Preferred batch size for replenishing the playback RingBuffer
     size_t mPlaybackSamplesToCopy;
     /// Hardware output latency in frames
-    size_t mHardwarePlaybackLatencyFrames {};
+    size_t mHardwarePlaybackLatencyFrames { 0u };
+    double mHardwarePlaybackLatencyMs{ 0 };
     /// Occupancy of the queue we try to maintain, with bigger batches if needed
     size_t mPlaybackQueueMinimum;
 
@@ -390,16 +398,7 @@ protected:
     //! Holds some state for duration of playback or recording
     std::unique_ptr<TransportState> mpTransportState;
 
-    /*!
-     * When re-starting playback after pause, there will be samples in the queue from before.
-     * Since those are stale, this method purges them.
-     * That way resuming from pause only plays back newly rendered samples.
-     * @param framesPerBuffer
-     * @param sampleBuffer Buffer for reading purged samples
-     */
-    void PurgeAfterPause(unsigned long framesPerBuffer, float** sampleBuffer);
-
-    std::atomic<bool> mPurgeIsNeeded{ false };
+    AudioCallbackInfoQueue mAudioCallbackInfoQueue { 16 };
 
 private:
     /*!
@@ -447,6 +446,12 @@ public:
      * reading input data. If software playthrough is enabled, it also opens
      * the output device in stereo to play the data through */
     void StartMonitoring(const AudioIOStartStreamOptions& options);
+
+    /** \brief Stop monitoring */
+    void StopMonitoring() override;
+
+    /** \brief Wait for busy state to end */
+    void WaitWhileBusy() const;
 
     /** \brief Start recording or playing back audio
      *
@@ -557,11 +562,6 @@ public:
 
 private:
     bool DelayingActions() const;
-
-    /**
-     * \brief Start the current VU meters
-     */
-    void StartMeters();
 
     /** \brief Opens the portaudio stream(s) used to do playback or recording
      * (or both) through.

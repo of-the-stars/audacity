@@ -12,19 +12,19 @@ RecordingPreferencesModel::RecordingPreferencesModel(QObject* parent)
     recordConfiguration()->isMicMeteringOnChanged().onNotify(this, [this]() {
         emit isMicMeteringOnChanged();
     });
+    recordConfiguration()->isInputMonitoringOnChanged().onNotify(this, [this]() {
+        emit isInputMonitoringOnChanged();
+    });
 }
 
-bool RecordingPreferencesModel::audibleInputMonitoring() const
+bool RecordingPreferencesModel::isInputMonitoringOn() const
 {
-    return record()->audioInput()->audibleInputMonitoring();
+    return recordConfiguration()->isInputMonitoringOn();
 }
 
-void RecordingPreferencesModel::setAudibleInputMonitoring(bool enabled)
+void RecordingPreferencesModel::setIsInputMonitoringOn(bool enabled)
 {
-    if (audibleInputMonitoring() != enabled) {
-        record()->audioInput()->setAudibleInputMonitoring(enabled);
-        emit audibleInputMonitoringChanged();
-    }
+    recordConfiguration()->setIsInputMonitoringOn(enabled);
 }
 
 bool RecordingPreferencesModel::isMicMeteringOn() const
@@ -34,7 +34,5 @@ bool RecordingPreferencesModel::isMicMeteringOn() const
 
 void RecordingPreferencesModel::setIsMicMeteringOn(bool enabled)
 {
-    if (isMicMeteringOn() != enabled) {
-        recordConfiguration()->setIsMicMeteringOn(enabled);
-    }
+    recordConfiguration()->setIsMicMeteringOn(enabled);
 }

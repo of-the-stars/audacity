@@ -42,7 +42,7 @@ Column {
             property var deleteBehaviors: deleteBehaviorModel.deleteBehaviors
             model: deleteBehaviors
 
-            delegate: DeleteBehaviorChoice {
+            delegate: BehaviorChoice {
                 text: modelData.text
                 imageSource: modelData.imageSource
                 addBorderToClipImageButton: deleteBehaviorModel.addBorderToClipImageButtons

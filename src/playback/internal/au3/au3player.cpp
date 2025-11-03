@@ -3,7 +3,8 @@
 */
 #include "au3player.h"
 
-#include "global/types/number.h"
+#include "framework/global/types/number.h"
+#include "framework/global/defer.h"
 
 #include "libraries/lib-time-frequency-selection/SelectedRegion.h"
 #include "libraries/lib-track/Track.h"
@@ -19,24 +20,13 @@
 #include "log.h"
 #include <algorithm>
 
+#include "ProjectRate.h"
+
 using namespace au::playback;
 using namespace au::au3;
 
 Au3Player::Au3Player()
-    : m_positionUpdateTimer(std::chrono::milliseconds(16))
 {
-    m_positionUpdateTimer.onTimeout(this, [this]() {
-        updatePlaybackState();
-    });
-
-    m_playbackStatus.ch.onReceive(this, [this](PlaybackStatus st) {
-        if (st == PlaybackStatus::Running) {
-            m_positionUpdateTimer.start();
-        } else {
-            m_positionUpdateTimer.stop();
-        }
-    });
-
     globalContext()->currentProjectChanged().onNotify(this, [this]() {
         auto project = globalContext()->currentTrackeditProject();
         if (!project) {
@@ -66,9 +56,7 @@ bool Au3Player::isBusy() const
 void Au3Player::play()
 {
     if (m_playbackStatus.val == PlaybackStatus::Paused) {
-        auto gAudioIO = AudioIO::Get();
-        gAudioIO->SetPaused(false);
-
+        audioEngine()->pauseStream(false);
         m_playbackStatus.set(PlaybackStatus::Running);
         return;
     }
@@ -102,8 +90,7 @@ void Au3Player::play()
         std::swap(t0, t1);
     }
 
-    auto gAudioIO = AudioIO::Get();
-    if (gAudioIO->IsBusy()) {
+    if (audioEngine()->isBusy()) {
         return /*-1*/;
     }
 
@@ -202,9 +189,8 @@ muse::Ret Au3Player::doPlayTracks(TrackList& trackList, double startTime, double
     m_startOffset = options.startOffset;
 
     AudacityProject& project = projectRef();
-    AudioIOStartStreamOptions sopts = ProjectAudioIO::GetDefaultOptions(project, options.isDefaultPolicy);
-
-    int token = audioEngine()->startStream(seqs, startTime, endTime, mixerEndTime, sopts);
+    const double projectRate = ProjectRate::Get(project).GetRate();
+    int token = audioEngine()->startStream(seqs, startTime, endTime, mixerEndTime, project, options.isDefaultPolicy, projectRate);
     bool success = token != 0;
     if (success) {
         ProjectAudioIO::Get(project).SetAudioIOToken(token);
@@ -223,6 +209,7 @@ void Au3Player::seek(const muse::secs_t newPosition, bool applyIfPlaying)
     auto& playRegion = ViewInfo::Get(project).playRegion;
     if (!playRegion.Active()) {
         playRegion.SetStart(pos);
+        playRegion.SetEnd(pos);
     }
 
     if (applyIfPlaying && m_playbackStatus.val == PlaybackStatus::Running) {
@@ -247,20 +234,13 @@ void Au3Player::stop()
     m_playbackStatus.set(PlaybackStatus::Stopped);
 
     //! NOTE: copied from ProjectAudioManager::Stop
-    bool stopStream = true;
-
     if (!canStopAudioStream()) {
         return;
     }
 
-    auto gAudioIO = AudioIO::Get();
-
-    if (stopStream) {
-        gAudioIO->StopStream();
-    }
-
-    //Make sure you tell gAudioIO to unpause
-    gAudioIO->SetPaused(false);
+    audioEngine()->stopStream();
+    //Make sure to unpause
+    audioEngine()->pauseStream(false);
 
     // So that we continue monitoring after playing or recording.
     // also clean the MeterQueues
@@ -276,10 +256,8 @@ void Au3Player::stop()
         captureMeter->stop();
     }
 
-    while (isBusy()) {
-        using namespace std::chrono;
-        std::this_thread::sleep_for(100ms);
-    }
+    m_consumedSamplesSoFar = 0;
+    m_currentTarget.reset();
 }
 
 void Au3Player::pause()
@@ -301,9 +279,7 @@ void Au3Player::resume()
         return;
     }
 
-    auto gAudioIO = AudioIO::Get();
-
-    gAudioIO->SetPaused(false);
+    audioEngine()->pauseStream(false);
 
     m_playbackStatus.set(PlaybackStatus::Running);
 }
@@ -341,8 +317,6 @@ PlaybackRegion Au3Player::playbackRegion() const
 
 void Au3Player::setPlaybackRegion(const PlaybackRegion& region)
 {
-    m_playbackPosition.set(std::max(0.0, region.start.raw()));
-
     Au3Project& project = projectRef();
 
     auto& playRegion = ViewInfo::Get(project).playRegion;
@@ -351,14 +325,13 @@ void Au3Player::setPlaybackRegion(const PlaybackRegion& region)
         return;
     }
 
-    playRegion.SetStart(region.start);
-
+    double end = region.end;
     if (region.start == region.end) {
-        auto& tracks = Au3TrackList::Get(project);
-        playRegion.SetEnd(tracks.GetEndTime());
-    } else {
-        playRegion.SetEnd(region.end);
+        const auto& tracks = Au3TrackList::Get(project);
+        end = tracks.GetEndTime();
     }
+    playRegion.SetStart(region.start);
+    playRegion.SetEnd(end);
 }
 
 PlaybackRegion Au3Player::loopRegion() const
@@ -381,8 +354,6 @@ void Au3Player::loopEditingEnd()
     Au3Project& project = projectRef();
     auto& playRegion = ViewInfo::Get(project).playRegion;
     playRegion.Order();
-
-    m_playbackPosition.set(std::max(loopRegion().start.raw(), 0.0));
 }
 
 void Au3Player::setLoopRegion(const PlaybackRegion& region)
@@ -390,7 +361,6 @@ void Au3Player::setLoopRegion(const PlaybackRegion& region)
     Au3Project& project = projectRef();
     auto& playRegion = ViewInfo::Get(project).playRegion;
 
-    playRegion.SetActive(true);
     playRegion.SetAllTimes(region.start, region.end);
 
     m_loopRegionChanged.notify();
@@ -478,23 +448,16 @@ muse::async::Notification Au3Player::loopRegionChanged() const
 
 void Au3Player::updatePlaybackState()
 {
-    if (m_playbackStatus.val != PlaybackStatus::Running) {
-        return;
-    }
-
-    IF_ASSERT_FAILED(globalContext()->currentProject()) {
-        return;
-    }
-
     int token = ProjectAudioIO::Get(projectRef()).GetAudioIOToken();
     bool isActive = AudioIO::Get()->IsStreamActive(token);
     double time = AudioIO::Get()->GetStreamTime() + m_startOffset;
 
-    //LOGDA() << "token: " << token << ", isActive: " << isActive << ", time: " << time;
-
     if (isActive) {
         m_reachedEnd.val = false;
-        m_playbackPosition.set(std::max(0.0, time));
+        const auto newTime = std::max(0.0, time);
+        if (!muse::is_equal(newTime, m_playbackPosition.val.raw())) {
+            m_playbackPosition.set(newTime);
+        }
     } else {
         if (playbackStatus() == PlaybackStatus::Running && !m_reachedEnd.val) {
             m_reachedEnd.val = true;
@@ -506,6 +469,42 @@ void Au3Player::updatePlaybackState()
 muse::secs_t Au3Player::playbackPosition() const
 {
     return m_playbackPosition.val;
+}
+
+void Au3Player::updatePlaybackPosition()
+{
+    using namespace std::chrono;
+
+    auto& audioIO = *AudioIO::Get();
+    const double sampleRate = audioIO.GetPlaybackSampleRate();
+    AudioIoCallback::AudioCallbackInfo newCallback;
+    while (audioIO.GetAudioCallbackInfoQueue().Get(newCallback)) {
+        const auto targetConsumedSamples = static_cast<unsigned long long>(newCallback.numSamples)
+                                           + (m_currentTarget ? m_currentTarget->consumedSamples : 0);
+        const nanoseconds payloadDuration{ static_cast<long>(newCallback.numSamples * 1e9 / sampleRate + .5) };
+        const auto targetTime = newCallback.dacTime + payloadDuration;
+        m_currentTarget.emplace(targetTime, targetConsumedSamples);
+    }
+
+    if (!m_currentTarget.has_value()) {
+        return;
+    }
+
+    const auto timeDiff = duration_cast<milliseconds>(steady_clock::now() - m_currentTarget->time).count() / 1000.0;
+    if (timeDiff > 0) {
+        // Hardware buffer was drained an no new data was put in there.
+        return;
+    }
+
+    const auto expectedConsumedNow = static_cast<long long>(m_currentTarget->consumedSamples + timeDiff * sampleRate);
+    if (static_cast<long long>(m_consumedSamplesSoFar) >= expectedConsumedNow) {
+        // User isn't hearing audio yet - wait some more.
+        return;
+    }
+
+    audioIO.UpdateTimePosition(expectedConsumedNow - m_consumedSamplesSoFar);
+    m_consumedSamplesSoFar = expectedConsumedNow;
+    updatePlaybackState();
 }
 
 muse::async::Channel<muse::secs_t> Au3Player::playbackPositionChanged() const

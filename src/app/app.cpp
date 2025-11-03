@@ -235,6 +235,11 @@ int App::run(QCoreApplication& app, CommandLineParser& commandLineParser)
                         delete splashScreen;
                     }
 
+                    // The main window must be shown at this point so KDDockWidgets can read its size correctly
+                    // and scale all sizes properly. https://github.com/musescore/MuseScore/issues/21148
+                    QQuickWindow* w = dynamic_cast<QQuickWindow*>(obj);
+                    w->setVisible(true);
+
                     startupScenario()->runAfterSplashScreen();
                 }
             }, Qt::QueuedConnection);
@@ -293,8 +298,6 @@ int App::run(QCoreApplication& app, CommandLineParser& commandLineParser)
     }
 #endif
     // Deinit
-
-    globalModule.invokeQueuedCalls();
 
     for (modularity::IModuleSetup* m : m_modules) {
         m->onDeinit();

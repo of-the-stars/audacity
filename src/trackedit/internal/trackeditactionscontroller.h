@@ -54,6 +54,7 @@ private:
     void doGlobalCopy();
     void doGlobalCut();
     void doGlobalDelete();
+    void doGlobalCancel();
     void doGlobalSplit();
     void doGlobalSplitIntoNewTrack();
     void doGlobalJoin();
@@ -64,7 +65,8 @@ private:
     void doGlobalCutPerTrackRipple();
     void doGlobalCutAllTracksRipple();
 
-    void paste();
+    void pasteDefault();
+    void pasteOverlap();
     void pasteInsert();
     void pasteInsertRipple();
 
@@ -141,6 +143,8 @@ private:
     void setTrackColor(const muse::actions::ActionQuery& q);
     void setTrackFormat(const muse::actions::ActionQuery& q);
     void setTrackRate(const muse::actions::ActionQuery& q);
+
+    void addLabel();
 
     context::IPlaybackStatePtr playbackState() const;
 

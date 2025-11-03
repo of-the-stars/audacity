@@ -46,6 +46,7 @@ private:
     bool removeClips(const ClipKeyList& clipKeyList, bool moveClips) override;
     bool removeTracksData(const TrackIdList& tracksIds, secs_t begin, secs_t end, bool moveClips) override;
     bool moveClips(secs_t timePositionOffset, int trackPositionOffset, bool completed, bool&) override;
+    void cancelItemDragEdit() override;
     bool splitTracksAt(const TrackIdList& tracksIds, std::vector<secs_t> pivots) override;
     bool splitClipsAtSilences(const ClipKeyList& clipKeyList) override;
     bool splitRangeSelectionAtSilences(const TrackIdList& tracksIds, secs_t begin, secs_t end) override;
@@ -67,6 +68,7 @@ private:
     std::optional<secs_t> getLeftmostClipStartTime(const ClipKeyList& clipKeys) const override;
     std::optional<secs_t> getRightmostClipEndTime(const ClipKeyList& clipKeys) const override;
     double nearestZeroCrossing(double time) const override;
+    muse::Ret makeRoomForClip(const trackedit::ClipKey& clipKey) override;
     bool newMonoTrack() override;
     bool newStereoTrack() override;
     bool newLabelTrack() override;
@@ -81,6 +83,9 @@ private:
     bool redo() override;
     bool canRedo() override;
     bool undoRedoToIndex(size_t index) override;
+
+    muse::async::Notification cancelDragEditRequested() const override;
+    void notifyAboutCancelDragEdit() override;
 
     bool insertSilence(const TrackIdList& trackIds, secs_t begin, secs_t end, secs_t duration) override;
 
@@ -100,6 +105,9 @@ private:
     bool splitStereoTracksToCenterMono(const TrackIdList& tracksIds) override;
     bool makeStereoTrack(const TrackId left, const TrackId right) override;
     bool resampleTracks(const TrackIdList& tracksIds, int rate) override;
+
+    bool addLabelToSelection() override;
+    bool changeLabelTitle(const LabelKey& labelKey, const muse::String& title) override;
 
     muse::Progress progress() const override;
 

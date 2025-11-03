@@ -3,19 +3,24 @@
  */
 #pragma once
 
+#include "async/asyncable.h"
+
+#include "modularity/ioc.h"
+#include "context/iglobalcontext.h"
 #include "itrackeditinteraction.h"
 #include "iprojecthistory.h"
-#include "itrackandclipoperations.h"
-#include "itrackeditclipboard.h"
 #include "iundomanager.h"
-#include "context/iglobalcontext.h"
-#include "async/asyncable.h"
-#include "modularity/ioc.h"
+#include "itracksinteraction.h"
+#include "iclipsinteraction.h"
+#include "ilabelsinteraction.h"
+#include "itrackeditclipboard.h"
 
 namespace au::trackedit {
 class TrackeditOperationController : public ITrackeditInteraction, public muse::Injectable, public muse::async::Asyncable
 {
-    muse::Inject<ITrackAndClipOperations> trackAndClipOperations;
+    muse::Inject<ITracksInteraction> tracksInteraction;
+    muse::Inject<IClipsInteraction> clipsInteraction;
+    muse::Inject<ILabelsInteraction> labelsInteraction;
     muse::Inject<ITrackeditClipboard> clipboard;
     muse::Inject<IProjectHistory> projectHistory;
     muse::Inject<au::context::IGlobalContext> globalContext;
@@ -54,6 +59,7 @@ public:
     bool removeClips(const ClipKeyList& clipKeyList, bool moveClips) override;
     bool removeTracksData(const TrackIdList& tracksIds, secs_t begin, secs_t end, bool moveClips) override;
     bool moveClips(secs_t timePositionOffset, int trackPositionOffset, bool completed, bool& clipsMovedToOtherTrack) override;
+    void cancelItemDragEdit() override;
     bool splitTracksAt(const TrackIdList& tracksIds, std::vector<secs_t> pivots) override;
     bool splitClipsAtSilences(const ClipKeyList& clipKeyList) override;
     bool splitRangeSelectionAtSilences(const TrackIdList& tracksIds, secs_t begin, secs_t end) override;
@@ -75,10 +81,12 @@ public:
     std::optional<secs_t> getLeftmostClipStartTime(const ClipKeyList& clipKeys) const override;
     std::optional<secs_t> getRightmostClipEndTime(const ClipKeyList& clipKeys) const override;
     double nearestZeroCrossing(double t0) const override;
+    muse::Ret makeRoomForClip(const trackedit::ClipKey& clipKey) override;
 
     bool newMonoTrack() override;
     bool newStereoTrack() override;
     bool newLabelTrack() override;
+
     bool deleteTracks(const TrackIdList& trackIds) override;
     bool duplicateTracks(const TrackIdList& trackIds) override;
     void moveTracks(const TrackIdList& trackIds, TrackMoveDirection direction) override;
@@ -90,6 +98,9 @@ public:
     bool redo() override;
     bool canRedo() override;
     bool undoRedoToIndex(size_t index) override;
+
+    void notifyAboutCancelDragEdit() override;
+    muse::async::Notification cancelDragEditRequested() const override;
 
     bool insertSilence(const TrackIdList& trackIds, secs_t begin, secs_t end, secs_t duration) override;
 
@@ -110,6 +121,9 @@ public:
     bool makeStereoTrack(const TrackId left, const TrackId right) override;
     bool resampleTracks(const TrackIdList& tracksIds, int rate) override;
 
+    bool addLabelToSelection() override;
+    bool changeLabelTitle(const LabelKey& labelKey, const muse::String& title) override;
+
     muse::Progress progress() const override;
 
 private:
@@ -119,5 +133,6 @@ private:
     void pushProjectHistoryDeleteState(secs_t start, secs_t duration);
 
     const std::unique_ptr<IUndoManager> m_undoManager;
+    muse::async::Notification m_cancelDragEditRequested;
 };
 }

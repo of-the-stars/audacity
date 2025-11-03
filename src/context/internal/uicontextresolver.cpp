@@ -90,7 +90,7 @@ void UiContextResolver::notifyAboutContextChanged()
     m_currentUiContextChanged.notify();
 }
 
-UiContext UiContextResolver::currentUiContext() const
+muse::ui::UiContext UiContextResolver::resolveUiContext() const
 {
     TRACEFUNC;
     Uri currentUri = interactive()->currentUri().val;
@@ -126,6 +126,13 @@ UiContext UiContextResolver::currentUiContext() const
     return context::UiCtxUnknown;
 }
 
+const muse::ui::UiContext& UiContextResolver::currentUiContext() const
+{
+    static muse::ui::UiContext current;
+    current = resolveUiContext();
+    return current;
+}
+
 bool UiContextResolver::match(const ui::UiContext& currentCtx, const ui::UiContext& actCtx) const
 {
     if (actCtx == context::UiCtxAny) {
@@ -138,6 +145,7 @@ bool UiContextResolver::match(const ui::UiContext& currentCtx, const ui::UiConte
         return true;
     }
 
+    //! SEE There's a problem here, see https://github.com/audacity/audacity/pull/9662#issuecomment-3405088750
     //! NOTE If the current context is `UiCtxProjectPlayback`, then we allow `UiCtxProjectFocused` too
     if (currentCtx == context::UiCtxProjectFocused && actCtx == context::UiCtxProjectPlayback) {
         return true;
@@ -182,8 +190,5 @@ bool UiContextResolver::isShortcutContextAllowed(const std::string& scContext) c
         return !matchWithCurrent(context::UiCtxProjectFocused);
     }
 
-    IF_ASSERT_FAILED(CTX_ANY == scContext) {
-        return true;
-    }
     return true;
 }

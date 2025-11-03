@@ -55,6 +55,17 @@ void PendingTracks::RegisterPendingNewTracks(TrackList& list)
     mTracks.Append(std::move(list), false);
 }
 
+Track* PendingTracks::FindPendingTrack(const Track& track) const
+{
+    auto id = track.GetId();
+    auto pred = [id](const auto& pTrack) {
+        return pTrack->GetId() == id;
+    };
+
+    auto it = std::find_if(mPendingUpdates->begin(), mPendingUpdates->end(), pred);
+    return it != mPendingUpdates->end() ? *it : nullptr;
+}
+
 std::pair<Track*, Channel*>
 PendingTracks::DoSubstitutePendingChangedChannel(
     Track& track, size_t channelIndex) const
@@ -168,8 +179,7 @@ const Track& PendingTracks::SubstituteOriginalTrack(const Track& track) const
 
 Track* PendingTracks::RegisterPendingChangedTrack(Updater updater, Track* src)
 {
-    auto track
-        =src->Duplicate(Track::DuplicateOptions {}.ShallowCopyAttachments());
+    auto track = src->GetEmptyCopy();
 
     mUpdaters.push_back(move(updater));
     mPendingUpdates->Add(track);

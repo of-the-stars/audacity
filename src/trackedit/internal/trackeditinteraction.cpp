@@ -145,6 +145,11 @@ bool TrackeditInteraction::moveClips(secs_t timePositionOffset, int trackPositio
                             clipsMovedToOtherTrack);
 }
 
+void TrackeditInteraction::cancelItemDragEdit()
+{
+    m_interaction->cancelItemDragEdit();
+}
+
 bool TrackeditInteraction::splitTracksAt(const TrackIdList& tracksIds, std::vector<secs_t> pivots)
 {
     return withPlaybackStop(&ITrackeditInteraction::splitTracksAt, tracksIds, pivots);
@@ -263,6 +268,11 @@ double TrackeditInteraction::nearestZeroCrossing(double time) const
     return m_interaction->nearestZeroCrossing(time);
 }
 
+muse::Ret TrackeditInteraction::makeRoomForClip(const ClipKey& clipKey)
+{
+    return m_interaction->makeRoomForClip(clipKey);
+}
+
 bool TrackeditInteraction::newMonoTrack()
 {
     return withPlaybackStop(&ITrackeditInteraction::newMonoTrack);
@@ -326,6 +336,16 @@ bool TrackeditInteraction::canRedo()
 bool TrackeditInteraction::undoRedoToIndex(size_t index)
 {
     return m_interaction->undoRedoToIndex(index);
+}
+
+muse::async::Notification TrackeditInteraction::cancelDragEditRequested() const
+{
+    return m_interaction->cancelDragEditRequested();
+}
+
+void TrackeditInteraction::notifyAboutCancelDragEdit()
+{
+    m_interaction->notifyAboutCancelDragEdit();
 }
 
 bool TrackeditInteraction::insertSilence(const TrackIdList& trackIds, secs_t begin, secs_t end, secs_t duration)
@@ -400,6 +420,16 @@ bool TrackeditInteraction::resampleTracks(const TrackIdList& tracksIds, int rate
     return withProgress([&, this]() {
         return withPlaybackStop(&ITrackeditInteraction::resampleTracks, tracksIds, rate);
     });
+}
+
+bool TrackeditInteraction::addLabelToSelection()
+{
+    return withPlaybackStop(&ITrackeditInteraction::addLabelToSelection);
+}
+
+bool TrackeditInteraction::changeLabelTitle(const LabelKey& labelKey, const muse::String& title)
+{
+    return withPlaybackStop(&ITrackeditInteraction::changeLabelTitle, labelKey, title);
 }
 
 muse::Progress TrackeditInteraction::progress() const

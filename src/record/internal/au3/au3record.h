@@ -12,6 +12,8 @@
 #include "actions/iactionsdispatcher.h"
 #include "trackedit/iprojecthistory.h"
 #include "playback/iplayback.h"
+#include "trackedit/itrackeditinteraction.h"
+#include "trackedit/iselectioncontroller.h"
 
 #include "au3wrap/au3types.h"
 
@@ -29,6 +31,8 @@ class Au3Record : public IRecord, public muse::async::Asyncable
     muse::Inject<muse::actions::IActionsDispatcher> dispatcher;
     muse::Inject<au::trackedit::IProjectHistory> projectHistory;
     muse::Inject<au::playback::IPlayback> playback;
+    muse::Inject<trackedit::ITrackeditInteraction> trackeditInteraction;
+    muse::Inject<au::trackedit::ISelectionController> selectionController;
 
 public:
     void init();
@@ -44,14 +48,8 @@ public:
 
 private:
     struct RecordData {
-        std::vector<trackedit::TrackId> tracksIds;
-        std::vector<trackedit::ClipKey> clipsKeys;
-
-        void clear()
-        {
-            tracksIds.clear();
-            clipsKeys.clear();
-        }
+        trackedit::ClipKey clipKey;
+        bool linkedToPendingClip;
     };
 
     au3::Au3Project& projectRef() const;
@@ -59,7 +57,7 @@ private:
     bool canStopAudioStream() const;
 
     muse::Ret doRecord(au3::Au3Project& project, const TransportSequences& sequences, double t0, double t1, bool altAppearance,
-                       const AudioIOStartStreamOptions& options);
+                       const double audioStreamSampleRate);
     void cancelRecording();
     void commitRecording();
 
@@ -68,7 +66,7 @@ private:
     mutable muse::async::Channel<float> m_playbackVolumeChanged;
 
     IAudioInputPtr m_audioInput;
-    RecordData m_recordData;
+    std::vector<RecordData> m_recordData;
 
     muse::ValCh<muse::secs_t> m_recordPosition;
 };

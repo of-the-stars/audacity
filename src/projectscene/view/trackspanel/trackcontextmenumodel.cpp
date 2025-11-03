@@ -4,6 +4,8 @@
 #include "trackcontextmenumodel.h"
 #include "trackedit/dom/track.h"
 
+#include "global/async/async.h"
+
 using namespace au::projectscene;
 using namespace muse::uicomponents;
 using namespace muse::actions;
@@ -91,6 +93,18 @@ MenuItemList TrackContextMenuModel::makeMonoTrackItems()
     return items;
 }
 
+MenuItemList TrackContextMenuModel::makeLabelTrackItems()
+{
+    return {
+        makeItemWithArg("track-rename"),
+        makeItemWithArg("track-duplicate"),
+        makeItemWithArg("track-delete"),
+        makeSeparator(),
+        makeMenu(muse::TranslatableString(TRANSLATABLE_STRING_CONTEXT, "Move track"), makeTrackMoveItems()),
+        makeMenu(muse::TranslatableString(TRANSLATABLE_STRING_CONTEXT, "Track color"), makeTrackColorItems(), TRACK_COLOR_MENU_ID),
+    };
+}
+
 void TrackContextMenuModel::load()
 {
     AbstractMenuModel::load();
@@ -100,11 +114,11 @@ void TrackContextMenuModel::load()
         updateTrackFormatState();
         updateTrackRateState();
         updateTrackMonoState();
-    });
+    }, muse::async::Asyncable::Mode::SetReplace);
 
     selectionController()->tracksSelected().onReceive(this, [this](const trackedit::TrackIdList&) {
         updateTrackMonoState();
-    });
+    }, muse::async::Asyncable::Mode::SetReplace);
 
     trackedit::ITrackeditProjectPtr prj = globalContext()->currentTrackeditProject();
     auto track = prj->track(m_trackId);
@@ -117,7 +131,7 @@ void TrackContextMenuModel::load()
             return;
         }
         load();
-    });
+    }, muse::async::Asyncable::Mode::SetReplace);
 
     switch (track.value().type) {
     case trackedit::TrackType::Mono:
@@ -127,6 +141,7 @@ void TrackContextMenuModel::load()
         setItems(makeStereoTrackItems());
         break;
     case trackedit::TrackType::Label:
+        setItems(makeLabelTrackItems());
         break;
     default:
         return;
@@ -162,7 +177,7 @@ void TrackContextMenuModel::handleMenuItem(const QString& itemId)
     if (itemId == "track-rename") {
         emit trackRenameRequested();
     } else {
-        AbstractMenuModel::handleMenuItem(itemId);
+        muse::async::Async::call(this, [this, itemId]{ AbstractMenuModel::handleMenuItem(itemId); });
     }
 }
 

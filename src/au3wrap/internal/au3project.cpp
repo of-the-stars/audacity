@@ -69,10 +69,8 @@ muse::Ret Au3ProjectCreator::removeUnsavedData(const muse::io::path_t& projectPa
         if (tempProject->isTemporary()) {
             tempProject->close();
             ret = fileSystem()->remove(projectPath);
-        } else if (tempProject->hasAutosaveData()) {
-            ret = tempProject->removeAutosaveData();
-            tempProject->close();
         } else {
+            ret = tempProject->removeAutosaveData();
             tempProject->close();
         }
     }
@@ -174,14 +172,13 @@ bool Au3ProjectAccessor::save(const muse::io::path_t& filePath)
 {
     auto& project = m_data->projectRef();
 
-    // Update saved state before SaveProject serializes the project.
-    updateSavedState();
-
     auto& projectFileIO = ProjectFileIO::Get(project);
-    auto result = projectFileIO.SaveProject(wxFromString(filePath.toString()), &TrackList::Get(project));
+    auto result = projectFileIO.SaveProject(wxFromString(filePath.toString()), m_lastSavedTracks.get());
     if (result) {
         UndoManager::Get(project).StateSaved();
     }
+
+    updateSavedState();
 
     return result;
 }
@@ -192,6 +189,7 @@ void Au3ProjectAccessor::updateSavedState()
 
     SavedMasterEffectList::Get(project).UpdateCopy();
 
+    clearSavedState();
     m_lastSavedTracks = TrackList::Create(nullptr);
     for (auto t : TrackList::Get(project).Any<WaveTrack>()) {
         m_lastSavedTracks->Add(t->Duplicate(Track::DuplicateOptions {}.Backup()), TrackList::DoAssignId::No);
@@ -200,8 +198,10 @@ void Au3ProjectAccessor::updateSavedState()
 
 void Au3ProjectAccessor::clearSavedState()
 {
-    m_lastSavedTracks->Clear();
-    m_lastSavedTracks.reset();
+    if (m_lastSavedTracks) {
+        m_lastSavedTracks->Clear();
+        m_lastSavedTracks.reset();
+    }
 }
 
 void Au3ProjectAccessor::close()

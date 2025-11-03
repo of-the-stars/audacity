@@ -640,6 +640,11 @@ public:
         return mSequences[ii].get();
     }
 
+    std::vector<std::shared_ptr<Sequence> >& GetSequences()
+    {
+        return mSequences;
+    }
+
     /*!
      @copydoc GetSequence
      */
@@ -932,6 +937,8 @@ public:
      */
     WaveClip(const WaveClip& orig, const SampleBlockFactoryPtr& factory, bool copyCutlines, CreateToken token);
 
+    void LinkToOtherSource(WaveClip& newClip);
+
 private:
     static void TransferSequence(WaveClip& origClip, WaveClip& newClip);
     static void FixSplitCutlines(
@@ -949,7 +956,8 @@ private:
     bool StretchRatioEquals(double value) const;
     sampleCount GetNumSamples() const;
     const SampleBlockFactoryPtr& GetFactory() const;
-    std::vector<std::unique_ptr<Sequence> > GetEmptySequenceCopies() const;
+
+    std::vector<std::shared_ptr<Sequence> > GetEmptySequenceCopies() const;
     void StretchCutLines(double ratioChange);
     double SnapToTrackSample(double time) const noexcept;
 
@@ -1005,7 +1013,7 @@ private:
         void Commit() { committed = true; }
 
         WaveClip& clip;
-        std::vector<std::unique_ptr<Sequence> > sequences;
+        std::vector<std::shared_ptr<Sequence> > sequences;
         const double mTrimLeft,
                      mTrimRight;
         bool committed{ false };
@@ -1037,7 +1045,7 @@ private:
     /*!
      @invariant `CheckInvariants()`
      */
-    std::vector<std::unique_ptr<Sequence> > mSequences;
+    std::vector<std::shared_ptr<Sequence> > mSequences;
     //! Envelope is unique, not per-sequence, and always non-null
     std::unique_ptr<Envelope> mEnvelope;
 
